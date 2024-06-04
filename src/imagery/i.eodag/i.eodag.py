@@ -53,9 +53,6 @@
 # % description: List of scenes IDs to download
 # % guisection: Filter
 # %end
-# %option
-# % key: file
-# % type: string
 # % multiple: yes
 # % description: List of text files with IDs to download
 # % guisection: Filter
@@ -236,7 +233,8 @@ def no_fallback_search(search_parameters, provider):
     # This will use the prefered provider by default
     search_result = dag.search_iter_page(**search_parameters)
 
-    # TODO: We can consider adding a method for the user to dynamically surf the pages
+    # TODO: Would it be useful if user could iterate through
+    # the pages manually, and look for the product themselves?
     try:
         return list(search_result)[0]
     except Exception as e:
