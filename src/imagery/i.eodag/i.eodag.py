@@ -53,6 +53,9 @@
 # % description: List of scenes IDs to download
 # % guisection: Filter
 # %end
+# %option
+# % key: file
+# % type: string
 # % multiple: yes
 # % description: List of text files with IDs to download
 # % guisection: Filter
@@ -88,7 +91,6 @@
 # % key: d
 # % description: Delete the product archieve after downloading
 # %end
-
 
 import sys
 import os
