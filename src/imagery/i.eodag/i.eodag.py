@@ -113,7 +113,6 @@ from datetime import datetime, timedelta
 
 import grass.script as gs
 from grass.exceptions import ParameterError
-import pandas as pd
 
 
 def create_dir(directory):
@@ -442,6 +441,10 @@ if __name__ == "__main__":
         from eodag.api.search_result import SearchResult
     except:
         gs.fatal(_("Cannot import eodag. Please intall the library first."))
+    try:
+        import pandas as pd
+    except:
+        gs.fatal(_("Cannot import pandas. Please intall the library first."))
 
     if "DEBUG" in gs.read_command("g.gisenv"):
         debug_level = int(gs.read_command("g.gisenv", get="DEBUG"))
