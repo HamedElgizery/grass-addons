@@ -362,7 +362,10 @@ if __name__ == "__main__":
         from eodag import EODataAccessGateway
         from eodag import setup_logging
         from eodag.api.search_result import SearchResult
+    except:
+        gs.fatal(_("Cannot import eodag. Please intall the library first."))
 
+    if "DEBUG" in gs.read_command("g.gisenv"):
         debug_level = int(gs.read_command("g.gisenv", get="DEBUG"))
         if not debug_level:
             setup_logging(1)
@@ -370,7 +373,5 @@ if __name__ == "__main__":
             setup_logging(2)
         else:
             setup_logging(3)
-    except:
-        gs.fatal(_("Cannot import eodag. Please intall the library first."))
 
     sys.exit(main())
