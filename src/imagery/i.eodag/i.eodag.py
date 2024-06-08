@@ -41,6 +41,13 @@
 # % required: no
 # % guisection: Region
 # %end
+# %option
+# % key: clouds
+# % type: integer
+# % description: Maximum cloud cover percentage for Sentinel scene
+# % required: no
+# % guisection: Filter
+# %end
 # %option G_OPT_V_OUTPUT
 # % key: footprints
 # % description: Name for output vector map with footprints
@@ -370,6 +377,7 @@ def main():
         gs.verbose(_("Region used for searching: {}".format(geom)))
 
         search_parameters = {
+            "cloudCover": options["clouds"],
             "items_per_page": items_per_page,
             "productType": product_type,
             "geom": geom,
