@@ -35,6 +35,19 @@
 # % answer: S1_SAR_GRD
 # % guisection: Filter
 # %end
+# %option G_OPT_V_MAP
+# % description: If not given then current computational extent is used
+# % label: Name of input vector map to define Area of Interest (AOI)
+# % required: no
+# % guisection: Region
+# %end
+# %option G_OPT_V_OUTPUT
+# % key: footprints
+# % description: Name for output vector map with footprints
+# % label: Only supported for download from ESA_Copernicus Open Access Hub
+# % required: no
+# % guisection: Output
+# %end
 # %option G_OPT_M_DIR
 # % key: output
 # % description: Name for output directory where to store downloaded data OR search results
@@ -100,6 +113,7 @@ from datetime import datetime, timedelta
 
 import grass.script as gs
 from grass.exceptions import ParameterError
+import pandas as pd
 
 
 def create_dir(directory):
@@ -110,28 +124,63 @@ def create_dir(directory):
 
 
 def get_bb(vector=None):
-    args = {}
-    if vector:
-        args["vector"] = vector
     # are we in LatLong location?
     kv = gs.parse_command("g.proj", flags="j")
     if "+proj" not in kv:
         gs.fatal(_("Unable to get bounding box: unprojected location not supported"))
     if kv["+proj"] != "longlat":
-        info = gs.parse_command("g.region", flags="uplg", **args)
+        info = gs.parse_command("g.region", flags="uplg")
         return {
             "lonmin": info["nw_long"],
             "latmin": info["sw_lat"],
             "lonmax": info["ne_long"],
             "latmax": info["nw_lat"],
         }
-    info = gs.parse_command("g.region", flags="upg", **args)
+    info = gs.parse_command("g.region", flags="upg")
     return {
         "lonmin": info["w"],
         "latmin": info["s"],
         "lonmax": info["e"],
         "latmax": info["n"],
     }
+
+
+def get_aoi(vector=None):
+    """Get the AOI for querying"""
+    # Handle empty AOI
+    if not vector:
+        return get_bb()
+
+
+"""
+     if gs.vector_info_topo(vector)["areas"] <= 0:
+        gs.fatal(_("No areas found in AOI map <{}>...").format(vector))
+    elif gs.vector_info_topo(vector)["areas"] > 1:
+        gs.warning(
+            _(
+                "More than one area found in AOI map <{}>. \
+                      Using only the first area..."
+            ).format(vector)
+        )
+
+
+
+    # TODO: Check the need to handle Vectors that can't be opened by VectorTopo
+    aoi_map = VectorTopo(aoi)
+    try:
+        aoi_map.open("r")
+        aoi_geoms = vmap.areas_to_wkb_list()
+        if len(aoi_geoms) > 1:
+            gs.warning(_(
+                "Found more than one AOI geomtry in vector map <{}>. Using only the first."
+            ).format(aoi))
+    except RuntimeError:
+        gs.fatal(_("Could nor read AOI from vector map <{}>").format(aoi))
+    aoi_geom = aoi_geoms[0][-1]
+    # Here we need to reproject if location CRS != EPSG:4326
+    # Note that shapely geometries are unaware of the CRS
+    return from_wkb(aoi_geom)
+    """
 
 
 def download_by_id(query_id: str):
@@ -244,6 +293,46 @@ def no_fallback_search(search_parameters, provider):
         gs.fatal(_("Server error, please try again."))
 
 
+def create_products_dataframe(eo_products):
+    result_dict = {"id": [], "time": [], "cloud_coverage": [], "product_type": []}
+    for product in eo_products:
+        if "id" in product.properties or product.properties["id"] is None:
+            result_dict["id"].append(product.properties["id"])
+        else:
+            result_dict["id"].append("NA")
+        if (
+            "startTimeFromAscendingNode" in product.properties
+            or product.properties["startTimeFromAscendingNode"] is None
+        ):
+            try:
+                result_dict["time"].append(
+                    normalize_time(product.properties["startTimeFromAscendingNode"])
+                )
+            except:
+                result_dict["time"].append(
+                    product.properties["startTimeFromAscendingNode"]
+                )
+        else:
+            result_dict["time"].append("time_NA")
+        if (
+            "cloudCover" in product.properties
+            or product.properties["cloudCover"] is None
+        ):
+            result_dict["cloud_coverage"].append(product.properties["cloudCover"])
+        else:
+            result_dict["cloud_coverage"].append("cloudcover_NA")
+        if (
+            "productType" in product.properties
+            or product.properties["productType"] is None
+        ):
+            result_dict["product_type"].append(product.properties["productType"])
+        else:
+            result_dict["product_type"].append("producttype_NA")
+
+    df = pd.DataFrame().from_dict(result_dict)
+    return df
+
+
 def main():
     # Products: https://github.com/CS-SI/eodag/blob/develop/eodag/resources/product_types.yml
 
@@ -276,19 +365,14 @@ def main():
         # could be handled by catching exceptions when searching...
         product_type = options["dataset"]
 
-        # TODO: Allow user to specify a shape file path
-        geom = (
-            # use boudning box of current computational region
-            get_bb()
-            # { "lonmin": 1.9, "latmin": 43.9, "lonmax": 2, "latmax": 45, }  # hardcoded for testing
-        )
+        # HARDCODED VALUES FOR TESTING { "lonmin": 1.9, "latmin": 43.9, "lonmax": 2, "latmax": 45, }  # hardcoded for testing
 
+        geom = get_aoi(options["map"])
         gs.verbose(_("Region used for searching: {}".format(geom)))
 
         search_parameters = {
             "items_per_page": items_per_page,
             "productType": product_type,
-            # TODO: Convert to a shapely object
             "geom": geom,
         }
 
@@ -326,22 +410,16 @@ def main():
 
         search_results = no_fallback_search(search_parameters, options["provider"])
         num_results = len(search_results)
-        gs.verbose(
-            _("Found {} matching scenes of type {}".format(num_results, product_type))
-        )
 
         if flags["l"]:
-            # TODO: Oragnize output format better
-            idx = 0
-            for product in search_results:
-                print(
-                    _(
-                        "Product #{} - ID:{},provider:{}".format(
-                            idx, product.properties["id"], product.provider
-                        )
-                    )
-                )
-                idx += 1
+            df = create_products_dataframe(search_results)
+            gs.message(_("{} product(s) found.").format(num_results))
+            for idx in range(len(df)):
+                product_id = df["id"].iloc[idx]
+                time_string = df["time"].iloc[idx]
+                cloud_cover = df["cloud_coverage"].iloc[idx]
+                product_type = df["product_type"].iloc[idx]
+                print(f"{product_id} {time_string} {cloud_cover:2.0f}% {product_type}")
         else:
             # TODO: Consider adding a quicklook flag
             # TODO: Add timeout and wait parameters for downloading offline products...
